@@ -39,6 +39,14 @@ export const api = {
     // Tasks
     getTasks: () => request('/tasks/list'),
     claimTask: (taskType) => request(`/tasks/claim/${taskType}`, { method: 'POST' }),
+    // Achievements
+    getAchievements: () => request('/achievements/list'),
+    claimAchievement: (achievementId) => request(`/achievements/claim/${achievementId}`, { method: 'POST' }),
+    // Admin
+    getAchievementConfigs: () => request('/admin/achievement-configs'),
+    createAchievementConfig: (data) => request('/admin/achievement-config', { method: 'POST', body: JSON.stringify(data) }),
+    updateAchievementConfig: (id, data) => request(`/admin/achievement-config/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteAchievementConfig: (id) => request(`/admin/achievement-config/${id}`, { method: 'DELETE' }),
     // Config
     getConfig: () => request('/config'),
 };

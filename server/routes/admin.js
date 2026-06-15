@@ -2,6 +2,7 @@ import { Router } from 'express';
 import User from '../models/User.js';
 import GameData from '../models/GameData.js';
 import DailyTaskConfig from '../models/DailyTaskConfig.js';
+import Achievement from '../models/Achievement.js';
 import { adminAuth } from '../middleware.js';
 
 const router = Router();
@@ -125,6 +126,114 @@ router.put('/task-config/:taskType', adminAuth, async (req, res) => {
             return res.status(400).json({ error: Object.values(err.errors).map(e => e.message).join(', ') });
         }
         res.status(500).json({ error: '更新失败' });
+    }
+});
+
+// 获取所有成就配置
+router.get('/achievement-configs', adminAuth, async (req, res) => {
+    try {
+        const configs = await Achievement.find().sort({ sortOrder: 1 });
+        res.json({ configs });
+    } catch (err) { res.status(500).json({ error: '获取成就配置失败' }); }
+});
+
+// 创建成就配置
+router.post('/achievement-config', adminAuth, async (req, res) => {
+    try {
+        const { achievementType, name, description, icon, targetCount, rewards, enabled, sortOrder } = req.body;
+        const validTypes = ['plant', 'harvest', 'feed_collect'];
+        if (!validTypes.includes(achievementType)) {
+            return res.status(400).json({ error: '无效成就类型' });
+        }
+        if (!name || !description) {
+            return res.status(400).json({ error: '名称和描述不能为空' });
+        }
+        const tc = Number(targetCount);
+        if (!tc || tc < 1) return res.status(400).json({ error: '目标次数必须大于0' });
+
+        const config = new Achievement({
+            achievementType,
+            name,
+            description,
+            icon: icon || '🏆',
+            targetCount: tc,
+            rewards: {
+                gold: Math.max(0, Number(rewards?.gold) || 0),
+                diamond: Math.max(0, Number(rewards?.diamond) || 0),
+                exp: Math.max(0, Number(rewards?.exp) || 0),
+                energy: Math.max(0, Number(rewards?.energy) || 0)
+            },
+            enabled: enabled !== undefined ? Boolean(enabled) : true,
+            sortOrder: Number(sortOrder) || 0
+        });
+
+        await config.save();
+        res.json({ message: '成就创建成功', config });
+    } catch (err) {
+        if (err.name === 'ValidationError') {
+            return res.status(400).json({ error: Object.values(err.errors).map(e => e.message).join(', ') });
+        }
+        res.status(500).json({ error: '创建失败' });
+    }
+});
+
+// 更新成就配置
+router.put('/achievement-config/:id', adminAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = {};
+        const { achievementType, name, description, icon, targetCount, rewards, enabled, sortOrder } = req.body;
+
+        if (achievementType !== undefined) {
+            const validTypes = ['plant', 'harvest', 'feed_collect'];
+            if (!validTypes.includes(achievementType)) {
+                return res.status(400).json({ error: '无效成就类型' });
+            }
+            updates.achievementType = achievementType;
+        }
+        if (name !== undefined) updates.name = name;
+        if (description !== undefined) updates.description = description;
+        if (icon !== undefined) updates.icon = icon;
+        if (targetCount !== undefined) {
+            const tc = Number(targetCount);
+            if (tc < 1) return res.status(400).json({ error: '目标次数必须大于0' });
+            updates.targetCount = tc;
+        }
+        if (rewards !== undefined) {
+            updates.rewards = {
+                gold: Math.max(0, Number(rewards.gold) || 0),
+                diamond: Math.max(0, Number(rewards.diamond) || 0),
+                exp: Math.max(0, Number(rewards.exp) || 0),
+                energy: Math.max(0, Number(rewards.energy) || 0)
+            };
+        }
+        if (enabled !== undefined) updates.enabled = Boolean(enabled);
+        if (sortOrder !== undefined) updates.sortOrder = Number(sortOrder) || 0;
+
+        const config = await Achievement.findByIdAndUpdate(
+            id,
+            { $set: updates },
+            { new: true, runValidators: true }
+        );
+        if (!config) return res.status(404).json({ error: '成就配置不存在' });
+        res.json({ message: '配置已更新', config });
+    } catch (err) {
+        if (err.name === 'ValidationError') {
+            return res.status(400).json({ error: Object.values(err.errors).map(e => e.message).join(', ') });
+        }
+        res.status(500).json({ error: '更新失败' });
+    }
+});
+
+// 删除成就配置
+router.delete('/achievement-config/:id', adminAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const config = await Achievement.findByIdAndDelete(id);
+        if (!config) return res.status(404).json({ error: '成就配置不存在' });
+        res.json({ message: '成就已删除' });
+    } catch (err) {
+        res.status(500).json({ error: '删除失败' });
     }
 });
 

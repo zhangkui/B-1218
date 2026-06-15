@@ -11,6 +11,7 @@ import InventoryView from '../components/InventoryView';
 import SocialView from '../components/SocialView';
 import LeaderboardView from '../components/LeaderboardView';
 import TaskView from '../components/TaskView';
+import AchievementView from '../components/AchievementView';
 import ActionLog from '../components/ActionLog';
 import AdminPage from './AdminPage';
 import { animatePageTransition } from '../utils/animations';
@@ -22,6 +23,7 @@ const TABS = [
     { key: 'shop', label: '🏪 商店', component: ShopView },
     { key: 'inventory', label: '📦 仓库', component: InventoryView },
     { key: 'tasks', label: '📋 任务', component: TaskView, special: true },
+    { key: 'achievements', label: '🏆 成就', component: AchievementView, special: true },
     { key: 'social', label: '👥 联机', component: SocialView },
     { key: 'leaderboard', label: '🏆 排行', component: LeaderboardView },
 ];
@@ -54,8 +56,13 @@ export default function GamePage() {
     };
 
     const renderComponent = () => {
-        if (activeTabConfig?.special && activeTabConfig.key === 'tasks') {
-            return <TaskView gameData={gameData} setGameData={setGameData} onMessage={handleTaskMessage} />;
+        if (activeTabConfig?.special) {
+            if (activeTabConfig.key === 'tasks') {
+                return <TaskView gameData={gameData} setGameData={setGameData} onMessage={handleTaskMessage} />;
+            }
+            if (activeTabConfig.key === 'achievements') {
+                return <AchievementView gameData={gameData} setGameData={setGameData} onMessage={handleTaskMessage} />;
+            }
         }
         return <ActiveComponent />;
     };

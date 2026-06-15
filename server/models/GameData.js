@@ -40,6 +40,7 @@ const gameDataSchema = new mongoose.Schema({
     },
     lastOnline: { type: Date, default: Date.now },
     stats: {
+        totalPlants: { type: Number, default: 0 },
         totalHarvests: { type: Number, default: 0 },
         totalAnimalCollects: { type: Number, default: 0 },
         totalTrades: { type: Number, default: 0 },

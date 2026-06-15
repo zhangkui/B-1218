@@ -7,12 +7,27 @@ export default function AdminPage() {
     const [stats, setStats] = useState(null);
     const [grantForm, setGrantForm] = useState({ userId: '', resource: 'gold', amount: 100 });
     const [taskConfigs, setTaskConfigs] = useState([]);
+    const [achievementConfigs, setAchievementConfigs] = useState([]);
+    const [showNewAchievement, setShowNewAchievement] = useState(false);
+    const [newAchievement, setNewAchievement] = useState({
+        achievementType: 'plant',
+        name: '',
+        description: '',
+        icon: '🏆',
+        targetCount: 10,
+        rewards: { gold: 0, diamond: 0, exp: 0, energy: 0 },
+        enabled: true,
+        sortOrder: 0
+    });
     const [msg, setMsg] = useState('');
 
     const load = async () => {
         try {
-            const [u, s, tc] = await Promise.all([api.getUsers(), api.getStats(), api.getTaskConfigs()]);
+            const [u, s, tc, ac] = await Promise.all([
+                api.getUsers(), api.getStats(), api.getTaskConfigs(), api.getAchievementConfigs()
+            ]);
             setUsers(u.users); setStats(s.stats); setTaskConfigs(tc.configs || []);
+            setAchievementConfigs(ac.configs || []);
         } catch (e) { setMsg(e.message); }
     };
 
@@ -85,6 +100,89 @@ export default function AdminPage() {
         plant: '种植任务',
         harvest: '收获任务',
         feed_collect: '养殖收取任务'
+    };
+
+    const achievementTypeLabels = {
+        plant: '种植成就',
+        harvest: '收获成就',
+        feed_collect: '养殖成就'
+    };
+
+    const updateAchievementField = (id, field, value) => {
+        setAchievementConfigs(prev => prev.map(c => {
+            if (c._id !== id) return c;
+            if (field.includes('.')) {
+                const [parent, child] = field.split('.');
+                return { ...c, [parent]: { ...c[parent], [child]: value } };
+            }
+            return { ...c, [field]: value };
+        }));
+    };
+
+    const handleSaveAchievement = async (id) => {
+        const config = achievementConfigs.find(c => c._id === id);
+        if (!config) return;
+        try {
+            const data = {
+                achievementType: config.achievementType,
+                name: config.name,
+                description: config.description,
+                icon: config.icon,
+                targetCount: Number(config.targetCount),
+                rewards: {
+                    gold: Number(config.rewards.gold) || 0,
+                    diamond: Number(config.rewards.diamond) || 0,
+                    exp: Number(config.rewards.exp) || 0,
+                    energy: Number(config.rewards.energy) || 0,
+                },
+                enabled: config.enabled,
+                sortOrder: Number(config.sortOrder) || 0
+            };
+            await api.updateAchievementConfig(id, data);
+            setMsg(`成就「${config.name}」配置已保存`);
+            load();
+        } catch (e) { setMsg(e.message); }
+    };
+
+    const toggleAchievementEnabled = async (id) => {
+        const config = achievementConfigs.find(c => c._id === id);
+        if (!config) return;
+        try {
+            await api.updateAchievementConfig(id, { enabled: !config.enabled });
+            load();
+        } catch (e) { setMsg(e.message); }
+    };
+
+    const handleDeleteAchievement = async (id) => {
+        if (!confirm('确定要删除该成就吗？')) return;
+        try {
+            await api.deleteAchievementConfig(id);
+            setMsg('成就已删除');
+            load();
+        } catch (e) { setMsg(e.message); }
+    };
+
+    const handleCreateAchievement = async () => {
+        if (!newAchievement.name || !newAchievement.description) {
+            setMsg('名称和描述不能为空');
+            return;
+        }
+        try {
+            await api.createAchievementConfig(newAchievement);
+            setMsg('成就创建成功');
+            setShowNewAchievement(false);
+            setNewAchievement({
+                achievementType: 'plant',
+                name: '',
+                description: '',
+                icon: '🏆',
+                targetCount: 10,
+                rewards: { gold: 0, diamond: 0, exp: 0, energy: 0 },
+                enabled: true,
+                sortOrder: 0
+            });
+            load();
+        } catch (e) { setMsg(e.message); }
     };
 
     return (
@@ -224,6 +322,189 @@ export default function AdminPage() {
                                     </div>
 
                                     <button className="btn-farm w-100" onClick={() => handleSaveConfig(cfg.taskType)}>保存配置</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Achievement Configs */}
+                <div className="game-card mb-4">
+                    <div className="d-flex justify-content-between align-items-center" style={{ marginBottom: '16px' }}>
+                        <h3 style={{ margin: 0 }}>🏆 成就配置</h3>
+                        <button className="btn-gold" style={{ fontSize: '12px', padding: '6px 14px' }} onClick={() => setShowNewAchievement(!showNewAchievement)}>
+                            {showNewAchievement ? '取消' : '+ 新增成就'}
+                        </button>
+                    </div>
+
+                    {showNewAchievement && (
+                        <div style={{
+                            padding: '16px',
+                            marginBottom: '16px',
+                            border: '2px dashed var(--gold)',
+                            borderRadius: 'var(--radius-sm)',
+                            background: 'rgba(245,158,11,0.05)'
+                        }}>
+                            <h4 style={{ fontSize: '14px', marginBottom: '12px', color: 'var(--gold)' }}>✨ 新建成就</h4>
+                            <div className="row g-2 mb-2">
+                                <div className="col-4">
+                                    <label className="form-label" style={{ fontSize: '12px' }}>成就类型</label>
+                                    <select className="form-select form-select-sm"
+                                        value={newAchievement.achievementType}
+                                        onChange={e => setNewAchievement({ ...newAchievement, achievementType: e.target.value })}>
+                                        <option value="plant">种植成就</option>
+                                        <option value="harvest">收获成就</option>
+                                        <option value="feed_collect">养殖成就</option>
+                                    </select>
+                                </div>
+                                <div className="col-5">
+                                    <label className="form-label" style={{ fontSize: '12px' }}>成就名称</label>
+                                    <input type="text" className="form-control form-control-sm"
+                                        value={newAchievement.name}
+                                        onChange={e => setNewAchievement({ ...newAchievement, name: e.target.value })} />
+                                </div>
+                                <div className="col-1">
+                                    <label className="form-label" style={{ fontSize: '12px' }}>图标</label>
+                                    <input type="text" className="form-control form-control-sm"
+                                        value={newAchievement.icon}
+                                        onChange={e => setNewAchievement({ ...newAchievement, icon: e.target.value })} />
+                                </div>
+                                <div className="col-2">
+                                    <label className="form-label" style={{ fontSize: '12px' }}>排序</label>
+                                    <input type="number" className="form-control form-control-sm"
+                                        value={newAchievement.sortOrder}
+                                        onChange={e => setNewAchievement({ ...newAchievement, sortOrder: e.target.value })} />
+                                </div>
+                            </div>
+                            <div className="mb-2">
+                                <label className="form-label" style={{ fontSize: '12px' }}>成就描述</label>
+                                <input type="text" className="form-control form-control-sm"
+                                    value={newAchievement.description}
+                                    onChange={e => setNewAchievement({ ...newAchievement, description: e.target.value })} />
+                            </div>
+                            <div className="row g-2 mb-3">
+                                <div className="col-4">
+                                    <label className="form-label" style={{ fontSize: '12px' }}>目标次数</label>
+                                    <input type="number" min="1" className="form-control form-control-sm"
+                                        value={newAchievement.targetCount}
+                                        onChange={e => setNewAchievement({ ...newAchievement, targetCount: e.target.value })} />
+                                </div>
+                            </div>
+                            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--gold)' }}>奖励配置</div>
+                            <div className="row g-2 mb-3">
+                                {['gold', 'diamond', 'exp', 'energy'].map(r => (
+                                    <div key={r} className="col-3">
+                                        <label className="form-label" style={{ fontSize: '11px' }}>
+                                            {r === 'gold' ? '💰 金币' : r === 'diamond' ? '💎 钻石' : r === 'exp' ? '⭐ 经验' : '⚡ 体力'}
+                                        </label>
+                                        <input type="number" min="0" className="form-control form-control-sm"
+                                            value={newAchievement.rewards[r]}
+                                            onChange={e => setNewAchievement({
+                                                ...newAchievement,
+                                                rewards: { ...newAchievement.rewards, [r]: e.target.value }
+                                            })} />
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="d-flex gap-2">
+                                <button className="btn-farm" onClick={handleCreateAchievement}>创建成就</button>
+                                <button className="btn-farm-outline" onClick={() => setShowNewAchievement(false)}>取消</button>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="row g-3">
+                        {achievementConfigs.map(cfg => (
+                            <div key={cfg._id} className="col-12 col-lg-6">
+                                <div style={{
+                                    padding: '16px',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: 'rgba(255,255,255,0.03)'
+                                }}>
+                                    <div className="d-flex justify-content-between align-items-center" style={{ marginBottom: '12px' }}>
+                                        <div style={{ fontWeight: 700 }}>
+                                            <span style={{ fontSize: '20px', marginRight: '8px' }}>{cfg.icon}</span>
+                                            {achievementTypeLabels[cfg.achievementType]} <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 400 }}>({cfg.achievementType})</span>
+                                        </div>
+                                        <div className="d-flex align-items-center gap-2">
+                                            <label className="form-check form-switch" style={{ marginBottom: 0 }}>
+                                                <input className="form-check-input" type="checkbox"
+                                                    checked={cfg.enabled} onChange={() => toggleAchievementEnabled(cfg._id)} />
+                                                <span className="form-check-label" style={{ fontSize: '12px' }}>
+                                                    {cfg.enabled ? '启用' : '禁用'}
+                                                </span>
+                                            </label>
+                                            <button className="btn-danger-custom" style={{ fontSize: '11px', padding: '4px 8px' }} onClick={() => handleDeleteAchievement(cfg._id)}>删除</button>
+                                        </div>
+                                    </div>
+
+                                    <div className="row g-2 mb-2">
+                                        <div className="col-6">
+                                            <label className="form-label" style={{ fontSize: '12px' }}>成就名称</label>
+                                            <input type="text" className="form-control form-control-sm"
+                                                value={cfg.name} onChange={e => updateAchievementField(cfg._id, 'name', e.target.value)} />
+                                        </div>
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '12px' }}>图标</label>
+                                            <input type="text" className="form-control form-control-sm"
+                                                value={cfg.icon} onChange={e => updateAchievementField(cfg._id, 'icon', e.target.value)} />
+                                        </div>
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '12px' }}>排序</label>
+                                            <input type="number" className="form-control form-control-sm"
+                                                value={cfg.sortOrder} onChange={e => updateAchievementField(cfg._id, 'sortOrder', e.target.value)} />
+                                        </div>
+                                    </div>
+
+                                    <div className="mb-2">
+                                        <label className="form-label" style={{ fontSize: '12px' }}>成就描述</label>
+                                        <input type="text" className="form-control form-control-sm"
+                                            value={cfg.description} onChange={e => updateAchievementField(cfg._id, 'description', e.target.value)} />
+                                    </div>
+
+                                    <div className="row g-2 mb-2">
+                                        <div className="col-6">
+                                            <label className="form-label" style={{ fontSize: '12px' }}>目标次数</label>
+                                            <input type="number" min="1" className="form-control form-control-sm"
+                                                value={cfg.targetCount} onChange={e => updateAchievementField(cfg._id, 'targetCount', e.target.value)} />
+                                        </div>
+                                        <div className="col-6">
+                                            <label className="form-label" style={{ fontSize: '12px' }}>成就类型</label>
+                                            <select className="form-select form-select-sm"
+                                                value={cfg.achievementType} onChange={e => updateAchievementField(cfg._id, 'achievementType', e.target.value)}>
+                                                <option value="plant">种植成就</option>
+                                                <option value="harvest">收获成就</option>
+                                                <option value="feed_collect">养殖成就</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--gold)' }}>奖励配置</div>
+                                    <div className="row g-2 mb-3">
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '11px' }}>💰 金币</label>
+                                            <input type="number" min="0" className="form-control form-control-sm"
+                                                value={cfg.rewards.gold} onChange={e => updateAchievementField(cfg._id, 'rewards.gold', e.target.value)} />
+                                        </div>
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '11px' }}>💎 钻石</label>
+                                            <input type="number" min="0" className="form-control form-control-sm"
+                                                value={cfg.rewards.diamond} onChange={e => updateAchievementField(cfg._id, 'rewards.diamond', e.target.value)} />
+                                        </div>
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '11px' }}>⭐ 经验</label>
+                                            <input type="number" min="0" className="form-control form-control-sm"
+                                                value={cfg.rewards.exp} onChange={e => updateAchievementField(cfg._id, 'rewards.exp', e.target.value)} />
+                                        </div>
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '11px' }}>⚡ 体力</label>
+                                            <input type="number" min="0" className="form-control form-control-sm"
+                                                value={cfg.rewards.energy} onChange={e => updateAchievementField(cfg._id, 'rewards.energy', e.target.value)} />
+                                        </div>
+                                    </div>
+
+                                    <button className="btn-farm w-100" onClick={() => handleSaveAchievement(cfg._id)}>保存配置</button>
                                 </div>
                             </div>
                         ))}
