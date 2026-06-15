@@ -2,6 +2,7 @@ import { Router } from 'express';
 import User from '../models/User.js';
 import GameData from '../models/GameData.js';
 import { auth, generateToken } from '../middleware.js';
+import { applyTaskProgress } from '../services/taskService.js';
 
 const router = Router();
 
@@ -28,6 +29,11 @@ router.post('/login', async (req, res) => {
         if (!user || !(await user.comparePassword(password))) return res.status(401).json({ error: '用户名或密码错误' });
         if (user.isBanned) return res.status(403).json({ error: '账号已被封禁' });
         user.lastLogin = new Date(); user.isOnline = true; await user.save();
+        try {
+            await applyTaskProgress(user._id, 'login', 1);
+        } catch (taskErr) {
+            console.error('登录任务进度更新失败:', taskErr);
+        }
         res.json({ token: generateToken(user._id), user: { id: user._id, username: user.username, role: user.role } });
     } catch (err) { console.error(err); res.status(500).json({ error: '登录失败' }); }
 });

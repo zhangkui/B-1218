@@ -8,9 +8,11 @@ import { dirname, join } from 'path';
 import authRoutes from './routes/auth.js';
 import gameRoutes from './routes/game.js';
 import adminRoutes from './routes/admin.js';
+import taskRoutes from './routes/tasks.js';
 import { setupSocket } from './socket/handler.js';
 import User from './models/User.js';
 import GameData from './models/GameData.js';
+import DailyTaskConfig from './models/DailyTaskConfig.js';
 import { GAME_CONFIG } from './config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -27,6 +29,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/game', gameRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/tasks', taskRoutes);
 
 // 游戏配置
 app.get('/api/config', (req, res) => res.json({ config: GAME_CONFIG }));
@@ -53,10 +56,16 @@ async function initAdmin() {
     }
 }
 
+async function initTasks() {
+    await DailyTaskConfig.initializeDefaults();
+    console.log('✅ 日常任务配置初始化完成');
+}
+
 // 启动
 mongoose.connect(MONGODB_URI).then(async () => {
     console.log('✅ MongoDB 连接成功');
     await initAdmin();
+    await initTasks();
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`🌾 你的农场服务器运行在 http://0.0.0.0:${PORT}`);
     });

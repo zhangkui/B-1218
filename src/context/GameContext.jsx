@@ -87,7 +87,7 @@ export function GameProvider({ children }) {
     return (
         <GameContext.Provider value={{
             gameData, config, logs, loading, offlineEarnings, dismissOffline,
-            plant, harvest, buyAnimal, collectAnimal, upgrade, sell, addLog, loadData
+            plant, harvest, buyAnimal, collectAnimal, upgrade, sell, addLog, loadData, setGameData
         }}>
             {children}
         </GameContext.Provider>

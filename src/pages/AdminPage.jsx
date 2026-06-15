@@ -6,12 +6,13 @@ export default function AdminPage() {
     const [users, setUsers] = useState([]);
     const [stats, setStats] = useState(null);
     const [grantForm, setGrantForm] = useState({ userId: '', resource: 'gold', amount: 100 });
+    const [taskConfigs, setTaskConfigs] = useState([]);
     const [msg, setMsg] = useState('');
 
     const load = async () => {
         try {
-            const [u, s] = await Promise.all([api.getUsers(), api.getStats()]);
-            setUsers(u.users); setStats(s.stats);
+            const [u, s, tc] = await Promise.all([api.getUsers(), api.getStats(), api.getTaskConfigs()]);
+            setUsers(u.users); setStats(s.stats); setTaskConfigs(tc.configs || []);
         } catch (e) { setMsg(e.message); }
     };
 
@@ -33,6 +34,57 @@ export default function AdminPage() {
             await api.grantResource(grantForm.userId, grantForm.resource, grantForm.amount);
             setMsg('赠送成功'); load();
         } catch (e) { setMsg(e.message); }
+    };
+
+    const updateConfigField = (taskType, field, value) => {
+        setTaskConfigs(prev => prev.map(c => {
+            if (c.taskType !== taskType) return c;
+            if (field.includes('.')) {
+                const [parent, child] = field.split('.');
+                return { ...c, [parent]: { ...c[parent], [child]: value } };
+            }
+            return { ...c, [field]: value };
+        }));
+    };
+
+    const handleSaveConfig = async (taskType) => {
+        const config = taskConfigs.find(c => c.taskType === taskType);
+        if (!config) return;
+        try {
+            const data = {
+                name: config.name,
+                description: config.description,
+                icon: config.icon,
+                targetCount: Number(config.targetCount),
+                rewards: {
+                    gold: Number(config.rewards.gold) || 0,
+                    diamond: Number(config.rewards.diamond) || 0,
+                    exp: Number(config.rewards.exp) || 0,
+                    energy: Number(config.rewards.energy) || 0,
+                },
+                enabled: config.enabled,
+                sortOrder: Number(config.sortOrder) || 0
+            };
+            await api.updateTaskConfig(taskType, data);
+            setMsg(`任务「${config.name}」配置已保存`);
+            load();
+        } catch (e) { setMsg(e.message); }
+    };
+
+    const toggleEnabled = async (taskType) => {
+        const config = taskConfigs.find(c => c.taskType === taskType);
+        if (!config) return;
+        try {
+            await api.updateTaskConfig(taskType, { enabled: !config.enabled });
+            load();
+        } catch (e) { setMsg(e.message); }
+    };
+
+    const taskTypeLabels = {
+        login: '登录任务',
+        plant: '种植任务',
+        harvest: '收获任务',
+        feed_collect: '养殖收取任务'
     };
 
     return (
@@ -89,6 +141,95 @@ export default function AdminPage() {
                     </div>
                 </div>
 
+                {/* Task Configs */}
+                <div className="game-card mb-4">
+                    <h3 style={{ marginBottom: '16px' }}>📋 日常任务配置</h3>
+                    <div className="row g-3">
+                        {taskConfigs.map(cfg => (
+                            <div key={cfg.taskType} className="col-12 col-lg-6">
+                                <div style={{
+                                    padding: '16px',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: 'rgba(255,255,255,0.03)'
+                                }}>
+                                    <div className="d-flex justify-content-between align-items-center" style={{ marginBottom: '12px' }}>
+                                        <div style={{ fontWeight: 700 }}>
+                                            <span style={{ fontSize: '20px', marginRight: '8px' }}>{cfg.icon}</span>
+                                            {taskTypeLabels[cfg.taskType]} <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 400 }}>({cfg.taskType})</span>
+                                        </div>
+                                        <label className="form-check form-switch" style={{ marginBottom: 0 }}>
+                                            <input className="form-check-input" type="checkbox"
+                                                checked={cfg.enabled} onChange={() => toggleEnabled(cfg.taskType)} />
+                                            <span className="form-check-label" style={{ fontSize: '12px' }}>
+                                                {cfg.enabled ? '启用' : '禁用'}
+                                            </span>
+                                        </label>
+                                    </div>
+
+                                    <div className="row g-2 mb-2">
+                                        <div className="col-6">
+                                            <label className="form-label" style={{ fontSize: '12px' }}>任务名称</label>
+                                            <input type="text" className="form-control form-control-sm"
+                                                value={cfg.name} onChange={e => updateConfigField(cfg.taskType, 'name', e.target.value)} />
+                                        </div>
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '12px' }}>图标</label>
+                                            <input type="text" className="form-control form-control-sm"
+                                                value={cfg.icon} onChange={e => updateConfigField(cfg.taskType, 'icon', e.target.value)} />
+                                        </div>
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '12px' }}>排序</label>
+                                            <input type="number" className="form-control form-control-sm"
+                                                value={cfg.sortOrder} onChange={e => updateConfigField(cfg.taskType, 'sortOrder', e.target.value)} />
+                                        </div>
+                                    </div>
+
+                                    <div className="mb-2">
+                                        <label className="form-label" style={{ fontSize: '12px' }}>任务描述</label>
+                                        <input type="text" className="form-control form-control-sm"
+                                            value={cfg.description} onChange={e => updateConfigField(cfg.taskType, 'description', e.target.value)} />
+                                    </div>
+
+                                    <div className="row g-2 mb-2">
+                                        <div className="col-6">
+                                            <label className="form-label" style={{ fontSize: '12px' }}>目标次数</label>
+                                            <input type="number" min="1" className="form-control form-control-sm"
+                                                value={cfg.targetCount} onChange={e => updateConfigField(cfg.taskType, 'targetCount', e.target.value)} />
+                                        </div>
+                                    </div>
+
+                                    <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--gold)' }}>奖励配置</div>
+                                    <div className="row g-2 mb-3">
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '11px' }}>💰 金币</label>
+                                            <input type="number" min="0" className="form-control form-control-sm"
+                                                value={cfg.rewards.gold} onChange={e => updateConfigField(cfg.taskType, 'rewards.gold', e.target.value)} />
+                                        </div>
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '11px' }}>💎 钻石</label>
+                                            <input type="number" min="0" className="form-control form-control-sm"
+                                                value={cfg.rewards.diamond} onChange={e => updateConfigField(cfg.taskType, 'rewards.diamond', e.target.value)} />
+                                        </div>
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '11px' }}>⭐ 经验</label>
+                                            <input type="number" min="0" className="form-control form-control-sm"
+                                                value={cfg.rewards.exp} onChange={e => updateConfigField(cfg.taskType, 'rewards.exp', e.target.value)} />
+                                        </div>
+                                        <div className="col-3">
+                                            <label className="form-label" style={{ fontSize: '11px' }}>⚡ 体力</label>
+                                            <input type="number" min="0" className="form-control form-control-sm"
+                                                value={cfg.rewards.energy} onChange={e => updateConfigField(cfg.taskType, 'rewards.energy', e.target.value)} />
+                                        </div>
+                                    </div>
+
+                                    <button className="btn-farm w-100" onClick={() => handleSaveConfig(cfg.taskType)}>保存配置</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
                 {/* User Table */}
                 <div className="game-card" style={{ overflowX: 'auto' }}>
                     <h3>👥 用户管理</h3>
@@ -130,3 +271,4 @@ export default function AdminPage() {
         </div>
     );
 }
+

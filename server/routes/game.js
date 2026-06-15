@@ -2,6 +2,7 @@ import { Router } from 'express';
 import GameData from '../models/GameData.js';
 import { auth } from '../middleware.js';
 import { GAME_CONFIG } from '../config.js';
+import { applyTaskProgress } from '../services/taskService.js';
 
 const router = Router();
 
@@ -53,6 +54,11 @@ router.post('/plant', auth, async (req, res) => {
         gd.resources.gold -= cc.buyPrice; gd.resources.energy -= GAME_CONFIG.energy.plantCost;
         plot.crop = cropType; plot.plantedAt = new Date(); plot.isReady = false;
         gd.lastOnline = new Date(); await gd.save();
+        try {
+            await applyTaskProgress(req.user._id, 'plant', 1);
+        } catch (taskErr) {
+            console.error('种植任务进度更新失败:', taskErr);
+        }
         res.json({ gameData: gd, message: `成功种植${cc.name}` });
     } catch (err) { res.status(500).json({ error: '种植失败' }); }
 });
@@ -74,6 +80,11 @@ router.post('/harvest', auth, async (req, res) => {
         gd.experience += cc.exp; gd.stats.totalHarvests += 1; gd.stats.totalGoldEarned += gold;
         plot.crop = null; plot.plantedAt = null; plot.isReady = false;
         const leveled = checkLevelUp(gd); gd.lastOnline = new Date(); await gd.save();
+        try {
+            await applyTaskProgress(req.user._id, 'harvest', 1);
+        } catch (taskErr) {
+            console.error('收获任务进度更新失败:', taskErr);
+        }
         res.json({ gameData: gd, message: `收获${cc.name}，+${gold}金币 +${cc.exp}经验`, leveled });
     } catch (err) { res.status(500).json({ error: '收获失败' }); }
 });
@@ -112,6 +123,11 @@ router.post('/collect-animal', auth, async (req, res) => {
         gd.stats.totalAnimalCollects += 1; gd.stats.totalGoldEarned += gold;
         pen.lastCollect = new Date(); pen.isReady = false;
         const leveled = checkLevelUp(gd); gd.lastOnline = new Date(); await gd.save();
+        try {
+            await applyTaskProgress(req.user._id, 'feed_collect', 1);
+        } catch (taskErr) {
+            console.error('养殖收取任务进度更新失败:', taskErr);
+        }
         res.json({ gameData: gd, message: `收获${ac.productName}，+${gold}金币 +${ac.exp}经验`, leveled });
     } catch (err) { res.status(500).json({ error: '收获失败' }); }
 });

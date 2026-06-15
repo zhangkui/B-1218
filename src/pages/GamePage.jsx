@@ -10,6 +10,7 @@ import ShopView from '../components/ShopView';
 import InventoryView from '../components/InventoryView';
 import SocialView from '../components/SocialView';
 import LeaderboardView from '../components/LeaderboardView';
+import TaskView from '../components/TaskView';
 import ActionLog from '../components/ActionLog';
 import AdminPage from './AdminPage';
 import { animatePageTransition } from '../utils/animations';
@@ -20,13 +21,14 @@ const TABS = [
     { key: 'building', label: '🏗️ 建筑', component: BuildingView },
     { key: 'shop', label: '🏪 商店', component: ShopView },
     { key: 'inventory', label: '📦 仓库', component: InventoryView },
+    { key: 'tasks', label: '📋 任务', component: TaskView, special: true },
     { key: 'social', label: '👥 联机', component: SocialView },
     { key: 'leaderboard', label: '🏆 排行', component: LeaderboardView },
 ];
 
 export default function GamePage() {
     const { user } = useAuth();
-    const { gameData, loading, offlineEarnings, dismissOffline, config } = useGame();
+    const { gameData, loading, offlineEarnings, dismissOffline, config, setGameData, addLog } = useGame();
     const [activeTab, setActiveTab] = useState('farm');
     const contentRef = useRef(null);
 
@@ -44,7 +46,19 @@ export default function GamePage() {
     const allTabs = [...TABS];
     if (user?.role === 'admin') allTabs.push({ key: 'admin', label: '⚙️ 管理', component: AdminPage });
 
-    const ActiveComponent = allTabs.find(t => t.key === activeTab)?.component || FarmView;
+    const activeTabConfig = allTabs.find(t => t.key === activeTab);
+    const ActiveComponent = activeTabConfig?.component || FarmView;
+
+    const handleTaskMessage = (msg, isError = false) => {
+        addLog(msg, isError ? 'error' : 'success');
+    };
+
+    const renderComponent = () => {
+        if (activeTabConfig?.special && activeTabConfig.key === 'tasks') {
+            return <TaskView gameData={gameData} setGameData={setGameData} onMessage={handleTaskMessage} />;
+        }
+        return <ActiveComponent />;
+    };
 
     return (
         <div>
@@ -60,7 +74,7 @@ export default function GamePage() {
                     ))}
                 </div>
                 <div ref={contentRef}>
-                    <ActiveComponent />
+                    {renderComponent()}
                 </div>
             </div>
             <ActionLog />

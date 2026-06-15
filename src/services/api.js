@@ -34,6 +34,11 @@ export const api = {
     grantResource: (userId, resource, amount) => request('/admin/grant', { method: 'POST', body: JSON.stringify({ userId, resource, amount }) }),
     deleteUser: (id) => request(`/admin/user/${id}`, { method: 'DELETE' }),
     resetUser: (id) => request(`/admin/reset/${id}`, { method: 'POST' }),
+    getTaskConfigs: () => request('/admin/task-configs'),
+    updateTaskConfig: (taskType, data) => request(`/admin/task-config/${taskType}`, { method: 'PUT', body: JSON.stringify(data) }),
+    // Tasks
+    getTasks: () => request('/tasks/list'),
+    claimTask: (taskType) => request(`/tasks/claim/${taskType}`, { method: 'POST' }),
     // Config
     getConfig: () => request('/config'),
 };

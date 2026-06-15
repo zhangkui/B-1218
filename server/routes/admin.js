@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import User from '../models/User.js';
 import GameData from '../models/GameData.js';
+import DailyTaskConfig from '../models/DailyTaskConfig.js';
 import { adminAuth } from '../middleware.js';
 
 const router = Router();
@@ -73,6 +74,58 @@ router.post('/reset/:id', adminAuth, async (req, res) => {
         const gd = await GameData.createForUser(user._id);
         res.json({ message: '数据已重置', gameData: gd });
     } catch (err) { res.status(500).json({ error: '重置失败' }); }
+});
+
+// 获取所有任务配置
+router.get('/task-configs', adminAuth, async (req, res) => {
+    try {
+        const configs = await DailyTaskConfig.find().sort({ sortOrder: 1 });
+        res.json({ configs });
+    } catch (err) { res.status(500).json({ error: '获取任务配置失败' }); }
+});
+
+// 更新任务配置
+router.put('/task-config/:taskType', adminAuth, async (req, res) => {
+    try {
+        const { taskType } = req.params;
+        const validTypes = ['login', 'plant', 'harvest', 'feed_collect'];
+        if (!validTypes.includes(taskType)) {
+            return res.status(400).json({ error: '无效任务类型' });
+        }
+        const updates = {};
+        const { name, description, icon, targetCount, rewards, enabled, sortOrder } = req.body;
+        if (name !== undefined) updates.name = name;
+        if (description !== undefined) updates.description = description;
+        if (icon !== undefined) updates.icon = icon;
+        if (targetCount !== undefined) {
+            const tc = Number(targetCount);
+            if (tc < 1) return res.status(400).json({ error: '目标次数必须大于0' });
+            updates.targetCount = tc;
+        }
+        if (rewards !== undefined) {
+            updates.rewards = {
+                gold: Math.max(0, Number(rewards.gold) || 0),
+                diamond: Math.max(0, Number(rewards.diamond) || 0),
+                exp: Math.max(0, Number(rewards.exp) || 0),
+                energy: Math.max(0, Number(rewards.energy) || 0)
+            };
+        }
+        if (enabled !== undefined) updates.enabled = Boolean(enabled);
+        if (sortOrder !== undefined) updates.sortOrder = Number(sortOrder) || 0;
+
+        const config = await DailyTaskConfig.findOneAndUpdate(
+            { taskType },
+            { $set: updates },
+            { new: true, runValidators: true }
+        );
+        if (!config) return res.status(404).json({ error: '任务配置不存在' });
+        res.json({ message: '配置已更新', config });
+    } catch (err) {
+        if (err.name === 'ValidationError') {
+            return res.status(400).json({ error: Object.values(err.errors).map(e => e.message).join(', ') });
+        }
+        res.status(500).json({ error: '更新失败' });
+    }
 });
 
 export default router;
