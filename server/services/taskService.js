@@ -13,40 +13,85 @@ function checkLevelUp(gd) {
 }
 
 export async function applyTaskProgress(userId, taskType, amount = 1) {
-    const daily = await DailyTask.getForUser(userId);
-    const result = await daily.addProgress(taskType, amount);
-    await daily.save();
-    return { daily, progressResult: result };
+    try {
+        const config = await DailyTaskConfig.findOne({ taskType, enabled: true });
+        if (!config) return { success: false, reason: '任务未启用' };
+        const result = await DailyTask.atomicAddProgress(userId, taskType, amount, config.targetCount);
+        return { success: true, ...result, config };
+    } catch (err) {
+        console.error('applyTaskProgress error:', err);
+        return { success: false, reason: err.message };
+    }
+}
+
+async function applyRewardsWithConcurrency(userId, rewards) {
+    let attempt = 0;
+    while (attempt < 5) {
+        attempt++;
+        const gd = await GameData.findOne({ userId });
+        if (!gd) throw new Error('游戏数据不存在');
+
+        const rewardText = [];
+        let gold = 0, diamond = 0, energy = 0, exp = 0;
+
+        if (rewards.gold) {
+            gold = rewards.gold;
+            gd.resources.gold += gold;
+            rewardText.push(`+${gold}金币`);
+        }
+        if (rewards.diamond) {
+            diamond = rewards.diamond;
+            gd.resources.diamond += diamond;
+            rewardText.push(`+${diamond}钻石`);
+        }
+        if (rewards.energy) {
+            energy = Math.min(rewards.energy, GAME_CONFIG.energy.max - gd.resources.energy);
+            if (energy > 0) {
+                gd.resources.energy += energy;
+                rewardText.push(`+${energy}体力`);
+            }
+        }
+        if (rewards.exp) {
+            exp = rewards.exp;
+            gd.experience += exp;
+            rewardText.push(`+${exp}经验`);
+        }
+
+        const leveled = checkLevelUp(gd);
+        gd.increment();
+
+        try {
+            const saved = await gd.save();
+            return { gameData: saved, rewardText: rewardText.join(' '), leveled };
+        } catch (e) {
+            if (e.name === 'VersionError') {
+                continue;
+            }
+            throw e;
+        }
+    }
+    throw new Error('奖励发放失败，请重试');
 }
 
 export async function claimTaskReward(userId, taskType) {
-    const daily = await DailyTask.getForUser(userId);
-    const task = daily.tasks.find(t => t.taskType === taskType);
-    if (!task) throw new Error('任务不存在');
-    if (task.claimed) throw new Error('奖励已领取');
-
     const config = await DailyTaskConfig.findOne({ taskType, enabled: true });
     if (!config) throw new Error('任务配置不存在');
-    if (task.progress < config.targetCount) throw new Error('任务未完成');
 
-    const gd = await GameData.findOne({ userId });
-    if (!gd) throw new Error('游戏数据不存在');
+    const claimResult = await DailyTask.atomicClaimTask(userId, taskType, config.targetCount);
+    if (!claimResult.success) {
+        throw new Error(claimResult.reason || '领取失败');
+    }
 
     const rewards = config.rewards || {};
-    let rewardText = [];
-    if (rewards.gold) { gd.resources.gold += rewards.gold; rewardText.push(`+${rewards.gold}金币`); }
-    if (rewards.diamond) { gd.resources.diamond += rewards.diamond; rewardText.push(`+${rewards.diamond}钻石`); }
-    if (rewards.energy) {
-        gd.resources.energy = Math.min(gd.resources.energy + rewards.energy, GAME_CONFIG.energy.max);
-        rewardText.push(`+${rewards.energy}体力`);
-    }
-    if (rewards.exp) { gd.experience += rewards.exp; rewardText.push(`+${rewards.exp}经验`); }
+    const rewardResult = await applyRewardsWithConcurrency(userId, rewards);
 
-    const leveled = checkLevelUp(gd);
-    task.claimed = true;
-
-    await Promise.all([daily.save(), gd.save()]);
-    return { rewards, rewardText: rewardText.join(' '), gameData: gd, leveled, config };
+    return {
+        rewards,
+        rewardText: rewardResult.rewardText,
+        gameData: rewardResult.gameData,
+        leveled: rewardResult.leveled,
+        config
+    };
 }
 
 export async function getTaskListWithProgress(userId) {
