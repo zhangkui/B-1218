@@ -3,9 +3,14 @@ import { GAME_CONFIG } from '../config.js';
 
 const plotSchema = new mongoose.Schema({
     slot: Number,
+    state: { type: String, default: 'empty' },
     crop: { type: String, default: null },
     plantedAt: { type: Date, default: null },
-    isReady: { type: Boolean, default: false }
+    growProgress: { type: Number, default: 0 },
+    isReady: { type: Boolean, default: false },
+    waterLevel: { type: Number, default: 0 },
+    lastWatered: { type: Date, default: null },
+    lastWitherCheck: { type: Date, default: null }
 }, { _id: false });
 
 const animalSchema = new mongoose.Schema({
@@ -38,6 +43,14 @@ const gameDataSchema = new mongoose.Schema({
         well: { level: { type: Number, default: 1 } },
         mill: { level: { type: Number, default: 1 } }
     },
+    season: {
+        current: { type: String, default: 'spring' },
+        startedAt: { type: Date, default: Date.now }
+    },
+    weather: {
+        current: { type: String, default: 'sunny' },
+        changedAt: { type: Date, default: Date.now }
+    },
     lastOnline: { type: Date, default: Date.now },
     stats: {
         totalPlants: { type: Number, default: 0 },
@@ -49,9 +62,16 @@ const gameDataSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 gameDataSchema.statics.createForUser = async function (userId) {
-    const plots = Array.from({ length: 4 }, (_, i) => ({ slot: i, crop: null, plantedAt: null, isReady: false }));
+    const plots = Array.from({ length: 4 }, (_, i) => ({
+        slot: i, state: 'empty', crop: null, plantedAt: null, growProgress: 0,
+        isReady: false, waterLevel: 0, lastWatered: null, lastWitherCheck: null
+    }));
     const animals = Array.from({ length: 2 }, (_, i) => ({ slot: i, type: null, lastCollect: null, isReady: false }));
-    return this.create({ userId, farm: { plots, maxPlots: 4 }, pasture: { animals, maxAnimals: 2 } });
+    return this.create({
+        userId, farm: { plots, maxPlots: 4 }, pasture: { animals, maxAnimals: 2 },
+        season: { current: 'spring', startedAt: new Date() },
+        weather: { current: 'sunny', changedAt: new Date() }
+    });
 };
 
 gameDataSchema.methods.calculateOfflineEarnings = function () {

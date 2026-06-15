@@ -21,7 +21,10 @@ export const api = {
     // Game
     getGameData: () => request('/game/data'),
     plant: (slotIndex, cropType) => request('/game/plant', { method: 'POST', body: JSON.stringify({ slotIndex, cropType }) }),
+    till: (slotIndex) => request('/game/till', { method: 'POST', body: JSON.stringify({ slotIndex }) }),
+    water: (slotIndex) => request('/game/water', { method: 'POST', body: JSON.stringify({ slotIndex }) }),
     harvest: (slotIndex) => request('/game/harvest', { method: 'POST', body: JSON.stringify({ slotIndex }) }),
+    clearWithered: (slotIndex) => request('/game/clear-withered', { method: 'POST', body: JSON.stringify({ slotIndex }) }),
     buyAnimal: (slotIndex, animalType) => request('/game/buy-animal', { method: 'POST', body: JSON.stringify({ slotIndex, animalType }) }),
     collectAnimal: (slotIndex) => request('/game/collect-animal', { method: 'POST', body: JSON.stringify({ slotIndex }) }),
     upgrade: (buildingType) => request('/game/upgrade', { method: 'POST', body: JSON.stringify({ buildingType }) }),
