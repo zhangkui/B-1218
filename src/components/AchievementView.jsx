@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
 
 export default function AchievementView({ gameData, setGameData, onMessage }) {
@@ -6,20 +6,21 @@ export default function AchievementView({ gameData, setGameData, onMessage }) {
     const [loading, setLoading] = useState(true);
     const [claiming, setClaiming] = useState(null);
 
-    const loadAchievements = async () => {
+    const loadAchievements = useCallback(async () => {
         try {
             const data = await api.getAchievements();
             setAchievements(data.achievements || []);
         } catch (e) {
             console.error('加载成就失败', e);
+            onMessage && onMessage('加载成就列表失败', true);
         } finally {
             setLoading(false);
         }
-    };
+    }, [onMessage]);
 
     useEffect(() => {
         loadAchievements();
-    }, []);
+    }, [loadAchievements]);
 
     const handleClaim = async (achievementId) => {
         setClaiming(achievementId);
@@ -29,7 +30,13 @@ export default function AchievementView({ gameData, setGameData, onMessage }) {
             onMessage && onMessage(result.message || '领取成功');
             await loadAchievements();
         } catch (e) {
-            onMessage && onMessage(e.message || '领取失败', true);
+            const msg = e.message || '领取失败';
+            if (msg.includes('重试') || msg.includes('稍后再试')) {
+                onMessage && onMessage(`${msg}，点击刷新按钮重试`, true);
+            } else {
+                onMessage && onMessage(msg, true);
+            }
+            await loadAchievements();
         } finally {
             setClaiming(null);
         }
@@ -37,6 +44,8 @@ export default function AchievementView({ gameData, setGameData, onMessage }) {
 
     const getAchievementStatus = (a) => {
         if (a.claimed) return { label: '已领取', cls: 'badge-custom badge-muted', btn: null };
+        if (a.isClaiming) return { label: '领取中', cls: 'badge-custom badge-info', btn: null };
+        if (a.canClaim || (a.completed && a.claimStatus === 'pending')) return { label: '可领取', cls: 'badge-custom badge-success', btn: 'claim' };
         if (a.completed) return { label: '可领取', cls: 'badge-custom badge-success', btn: 'claim' };
         return { label: '进行中', cls: 'badge-custom badge-info', btn: null };
     };
@@ -62,9 +71,36 @@ export default function AchievementView({ gameData, setGameData, onMessage }) {
         return acc;
     }, {});
 
+    const hasClaiming = achievements.some(a => a.isClaiming);
+
     return (
         <div className="game-section">
-            <h2 style={{ marginBottom: '16px' }}>🏆 成就系统</h2>
+            <div className="d-flex justify-content-between align-items-center" style={{ marginBottom: '16px' }}>
+                <h2 style={{ margin: 0 }}>🏆 成就系统</h2>
+                <button
+                    className="btn-farm-outline"
+                    style={{ fontSize: '12px', padding: '6px 14px' }}
+                    onClick={loadAchievements}
+                    disabled={loading}
+                >
+                    🔄 刷新
+                </button>
+            </div>
+
+            {hasClaiming && (
+                <div style={{
+                    padding: '10px 14px',
+                    background: 'rgba(96,165,250,0.1)',
+                    border: '1px solid var(--blue)',
+                    borderRadius: 'var(--radius-xs)',
+                    marginBottom: '16px',
+                    color: 'var(--blue)',
+                    fontSize: '13px'
+                }}>
+                    ℹ️ 检测到有待确认的领取记录，如为最近操作请等待数秒后刷新重试
+                </div>
+            )}
+
             {loading ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>加载中...</div>
             ) : achievements.length === 0 ? (
@@ -79,9 +115,10 @@ export default function AchievementView({ gameData, setGameData, onMessage }) {
                             {list.map(a => {
                                 const status = getAchievementStatus(a);
                                 const pct = Math.min(100, (a.progress / a.targetCount) * 100);
+                                const isClaimBtnDisabled = claiming === a._id || a.isClaiming;
                                 return (
                                     <div key={a._id} className="col-12 col-lg-6">
-                                        <div className={`game-card ${a.claimed ? 'achievement-claimed' : a.completed ? 'achievement-completed' : ''}`} style={{ padding: '16px' }}>
+                                        <div className={`game-card ${a.claimed ? 'achievement-claimed' : a.canClaim || a.completed ? 'achievement-completed' : ''}`} style={{ padding: '16px' }}>
                                             <div className="d-flex justify-content-between align-items-start" style={{ marginBottom: '10px' }}>
                                                 <div className="d-flex align-items-center gap-2">
                                                     <span style={{ fontSize: '28px' }}>{a.icon}</span>
@@ -105,9 +142,11 @@ export default function AchievementView({ gameData, setGameData, onMessage }) {
                                                             width: `${pct}%`,
                                                             background: a.claimed
                                                                 ? 'linear-gradient(90deg, #6b7280, #9ca3af)'
-                                                                : a.completed
-                                                                    ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
-                                                                    : 'linear-gradient(90deg, var(--blue), #60a5fa)'
+                                                                : a.isClaiming
+                                                                    ? 'linear-gradient(90deg, var(--blue), #60a5fa)'
+                                                                    : a.canClaim || a.completed
+                                                                        ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
+                                                                        : 'linear-gradient(90deg, var(--blue), #60a5fa)'
                                                         }}
                                                     />
                                                 </div>
@@ -123,9 +162,9 @@ export default function AchievementView({ gameData, setGameData, onMessage }) {
                                                         className="btn-gold"
                                                         style={{ fontSize: '12px', padding: '6px 14px' }}
                                                         onClick={() => handleClaim(a._id)}
-                                                        disabled={claiming === a._id}
+                                                        disabled={isClaimBtnDisabled}
                                                     >
-                                                        {claiming === a._id ? '领取中...' : '领取奖励'}
+                                                        {claiming === a._id ? '领取中...' : a.isClaiming ? '处理中...' : '领取奖励'}
                                                     </button>
                                                 )}
                                             </div>

@@ -15,6 +15,7 @@ import User from './models/User.js';
 import GameData from './models/GameData.js';
 import DailyTaskConfig from './models/DailyTaskConfig.js';
 import Achievement from './models/Achievement.js';
+import PlayerAchievement from './models/PlayerAchievement.js';
 import { GAME_CONFIG } from './config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -69,12 +70,41 @@ async function initAchievements() {
     console.log('✅ 成就配置初始化完成');
 }
 
+async function startAchievementCompensation() {
+    const CLAIM_TIMEOUT_MS = 5 * 60 * 1000;
+    const CHECK_INTERVAL_MS = 60 * 1000;
+
+    setInterval(async () => {
+        try {
+            const now = new Date();
+            const timeoutThreshold = new Date(now.getTime() - CLAIM_TIMEOUT_MS);
+            const result = await PlayerAchievement.updateMany(
+                {
+                    claimStatus: 'claiming',
+                    claimStartedAt: { $lt: timeoutThreshold }
+                },
+                {
+                    $set: { claimStatus: 'pending', claimStartedAt: null }
+                }
+            );
+            if (result.modifiedCount > 0) {
+                console.log(`🔄 成就补偿：已回滚 ${result.modifiedCount} 条超时领取记录`);
+            }
+        } catch (err) {
+            console.error('❌ 成就补偿任务执行失败:', err);
+        }
+    }, CHECK_INTERVAL_MS);
+
+    console.log('✅ 成就补偿定时任务已启动');
+}
+
 // 启动
 mongoose.connect(MONGODB_URI).then(async () => {
     console.log('✅ MongoDB 连接成功');
     await initAdmin();
     await initTasks();
     await initAchievements();
+    startAchievementCompensation();
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`🌾 你的农场服务器运行在 http://0.0.0.0:${PORT}`);
     });

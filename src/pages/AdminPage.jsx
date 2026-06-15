@@ -20,6 +20,12 @@ export default function AdminPage() {
         sortOrder: 0
     });
     const [msg, setMsg] = useState('');
+    const [msgType, setMsgType] = useState('success');
+
+    const showMessage = (text, type = 'success') => {
+        setMsg(text);
+        setMsgType(type);
+    };
 
     const load = async () => {
         try {
@@ -28,27 +34,27 @@ export default function AdminPage() {
             ]);
             setUsers(u.users); setStats(s.stats); setTaskConfigs(tc.configs || []);
             setAchievementConfigs(ac.configs || []);
-        } catch (e) { setMsg(e.message); }
+        } catch (e) { showMessage(e.message, 'error'); }
     };
 
     useEffect(() => { load(); }, []);
 
     const handleBan = async (id) => {
-        try { await api.banUser(id); load(); } catch (e) { setMsg(e.message); }
+        try { await api.banUser(id); load(); } catch (e) { showMessage(e.message, 'error'); }
     };
     const handleDelete = async (id) => {
         if (!confirm('确定要删除该用户吗？')) return;
-        try { await api.deleteUser(id); load(); } catch (e) { setMsg(e.message); }
+        try { await api.deleteUser(id); load(); } catch (e) { showMessage(e.message, 'error'); }
     };
     const handleReset = async (id) => {
         if (!confirm('确定要重置该用户数据吗？')) return;
-        try { await api.resetUser(id); load(); setMsg('数据已重置'); } catch (e) { setMsg(e.message); }
+        try { await api.resetUser(id); load(); showMessage('数据已重置'); } catch (e) { showMessage(e.message, 'error'); }
     };
     const handleGrant = async () => {
         try {
             await api.grantResource(grantForm.userId, grantForm.resource, grantForm.amount);
-            setMsg('赠送成功'); load();
-        } catch (e) { setMsg(e.message); }
+            showMessage('赠送成功'); load();
+        } catch (e) { showMessage(e.message, 'error'); }
     };
 
     const updateConfigField = (taskType, field, value) => {
@@ -81,9 +87,9 @@ export default function AdminPage() {
                 sortOrder: Number(config.sortOrder) || 0
             };
             await api.updateTaskConfig(taskType, data);
-            setMsg(`任务「${config.name}」配置已保存`);
+            showMessage(`任务「${config.name}」配置已保存`);
             load();
-        } catch (e) { setMsg(e.message); }
+        } catch (e) { showMessage(e.message, 'error'); }
     };
 
     const toggleEnabled = async (taskType) => {
@@ -91,8 +97,9 @@ export default function AdminPage() {
         if (!config) return;
         try {
             await api.updateTaskConfig(taskType, { enabled: !config.enabled });
+            showMessage(`任务「${config.name}」已${!config.enabled ? '启用' : '禁用'}`);
             load();
-        } catch (e) { setMsg(e.message); }
+        } catch (e) { showMessage(e.message, 'error'); }
     };
 
     const taskTypeLabels = {
@@ -139,9 +146,9 @@ export default function AdminPage() {
                 sortOrder: Number(config.sortOrder) || 0
             };
             await api.updateAchievementConfig(id, data);
-            setMsg(`成就「${config.name}」配置已保存`);
+            showMessage(`成就「${config.name}」配置已保存`);
             load();
-        } catch (e) { setMsg(e.message); }
+        } catch (e) { showMessage(e.message, 'error'); }
     };
 
     const toggleAchievementEnabled = async (id) => {
@@ -149,27 +156,29 @@ export default function AdminPage() {
         if (!config) return;
         try {
             await api.updateAchievementConfig(id, { enabled: !config.enabled });
+            showMessage(`成就「${config.name}」已${!config.enabled ? '启用' : '禁用'}`);
             load();
-        } catch (e) { setMsg(e.message); }
+        } catch (e) { showMessage(e.message, 'error'); }
     };
 
     const handleDeleteAchievement = async (id) => {
         if (!confirm('确定要删除该成就吗？')) return;
         try {
+            const config = achievementConfigs.find(c => c._id === id);
             await api.deleteAchievementConfig(id);
-            setMsg('成就已删除');
+            showMessage(`成就「${config?.name || ''}」已删除`);
             load();
-        } catch (e) { setMsg(e.message); }
+        } catch (e) { showMessage(e.message, 'error'); }
     };
 
     const handleCreateAchievement = async () => {
         if (!newAchievement.name || !newAchievement.description) {
-            setMsg('名称和描述不能为空');
+            showMessage('名称和描述不能为空', 'error');
             return;
         }
         try {
             await api.createAchievementConfig(newAchievement);
-            setMsg('成就创建成功');
+            showMessage('成就创建成功');
             setShowNewAchievement(false);
             setNewAchievement({
                 achievementType: 'plant',
@@ -182,14 +191,22 @@ export default function AdminPage() {
                 sortOrder: 0
             });
             load();
-        } catch (e) { setMsg(e.message); }
+        } catch (e) { showMessage(e.message, 'error'); }
     };
 
     return (
         <div>
             <div className="game-section">
                 <h2>⚙️ 管理员面板</h2>
-                {msg && <div style={{ padding: '10px', background: 'rgba(74,222,128,0.1)', border: '1px solid var(--green)', borderRadius: 'var(--radius-xs)', marginBottom: '12px', color: 'var(--green)', fontSize: '14px' }}>{msg}</div>}
+                {msg && <div style={{
+                    padding: '10px',
+                    background: msgType === 'error' ? 'rgba(248,113,113,0.1)' : 'rgba(74,222,128,0.1)',
+                    border: `1px solid ${msgType === 'error' ? 'var(--red)' : 'var(--green)'}`,
+                    borderRadius: 'var(--radius-xs)',
+                    marginBottom: '12px',
+                    color: msgType === 'error' ? 'var(--red)' : 'var(--green)',
+                    fontSize: '14px'
+                }}>{msg}</div>}
 
                 {/* Stats */}
                 {stats && (

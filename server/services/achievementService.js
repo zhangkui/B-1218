@@ -72,14 +72,42 @@ async function applyRewardsWithConcurrency(userId, rewards) {
 }
 
 export async function claimAchievementReward(userId, achievementId) {
-    const claimResult = await PlayerAchievement.atomicClaimAchievement(userId, achievementId);
-    if (!claimResult.success) {
-        throw new Error(claimResult.reason || '领取失败');
+    const startResult = await PlayerAchievement.tryStartClaim(userId, achievementId);
+    if (!startResult.success) {
+        throw new Error(startResult.reason || '领取失败');
     }
 
-    const achievement = claimResult.achievement;
+    const achievement = startResult.achievement;
     const rewards = achievement.rewards || {};
-    const rewardResult = await applyRewardsWithConcurrency(userId, rewards);
+
+    let rewardResult = null;
+    let rewardError = null;
+
+    try {
+        rewardResult = await applyRewardsWithConcurrency(userId, rewards);
+    } catch (err) {
+        rewardError = err;
+        console.error('成就奖励发放失败，准备回滚领取状态:', err);
+    }
+
+    if (rewardError) {
+        try {
+            await PlayerAchievement.rollbackClaim(userId, achievementId);
+            console.log(`成就 ${achievementId} 领取状态已回滚，用户可重试`);
+        } catch (rollbackErr) {
+            console.error('回滚领取状态失败，可能需要手动补偿:', rollbackErr);
+        }
+        throw new Error(`奖励发放失败：${rewardError.message}，请稍后重试`);
+    }
+
+    try {
+        const confirmResult = await PlayerAchievement.confirmClaim(userId, achievementId);
+        if (!confirmResult.success && !confirmResult.alreadyClaimed) {
+            console.error('确认领取状态失败，但奖励已发放。奖励已到账，请用户放心');
+        }
+    } catch (confirmErr) {
+        console.error('确认领取状态异常，但奖励已发放。奖励已到账，请用户放心:', confirmErr);
+    }
 
     return {
         rewards,
