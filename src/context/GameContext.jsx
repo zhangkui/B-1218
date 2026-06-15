@@ -13,8 +13,8 @@ const SEASONS_CFG = {
 };
 
 const WEATHERS_CFG = {
-    sunny: { name: '晴天', icon: '☀️', growMultiplier: 1.2, waterEffect: 0, witherChance: 0.1 },
-    rainy: { name: '雨天', icon: '🌧️', growMultiplier: 0.8, waterEffect: 1, witherChance: 0 },
+    sunny: { name: '晴天', icon: '☀️', growMultiplier: 1.2, waterEffect: 1, witherChance: 0.1 },
+    rainy: { name: '雨天', icon: '🌧️', growMultiplier: 0.8, waterEffect: 2, witherChance: 0 },
     drought: { name: '干旱', icon: '🏜️', growMultiplier: 0.6, waterEffect: 0, witherChance: 0.3 },
     coldwave: { name: '寒潮', icon: '🥶', growMultiplier: 0.3, waterEffect: 0, witherChance: 0.2 }
 };
@@ -29,6 +29,8 @@ const WEATHER_WEIGHTS = {
     winter: { sunny: 0.2, rainy: 0.15, drought: 0.05, coldwave: 0.6 }
 };
 
+const FULL_SYNC_INTERVAL = 8000;
+
 function pickWeatherBySeason(season) {
     const weights = WEATHER_WEIGHTS[season];
     if (!weights) return 'sunny';
@@ -41,6 +43,10 @@ function pickWeatherBySeason(season) {
     return 'sunny';
 }
 
+function clone(obj) {
+    return JSON.parse(JSON.stringify(obj));
+}
+
 export function GameProvider({ children }) {
     const { user } = useAuth();
     const [gameData, setGameData] = useState(null);
@@ -50,6 +56,8 @@ export function GameProvider({ children }) {
     const [loading, setLoading] = useState(true);
     const timerRef = useRef(null);
     const weatherTimerRef = useRef(null);
+    const syncTimerRef = useRef(null);
+    const lastTickRef = useRef(Date.now());
 
     const addLog = useCallback((msg, type = 'info') => {
         setLogs(prev => [...prev.slice(-49), { id: Date.now(), msg, type, time: new Date().toLocaleTimeString() }]);
@@ -61,6 +69,7 @@ export function GameProvider({ children }) {
             setGameData(data.gameData);
             setConfig(data.config);
             if (data.offlineEarnings) setOfflineEarnings(data.offlineEarnings);
+            lastTickRef.current = Date.now();
             return data;
         } catch (err) { addLog(err.message, 'error'); }
         finally { setLoading(false); }
@@ -70,11 +79,13 @@ export function GameProvider({ children }) {
 
     useEffect(() => {
         if (!gameData || !config) return;
-        timerRef.current = setInterval(() => {
+        const loop = () => {
             setGameData(prev => {
                 if (!prev) return prev;
-                const now = new Date();
-                const updated = JSON.parse(JSON.stringify(prev));
+                const now = Date.now();
+                const dt = (now - lastTickRef.current) / 1000;
+                lastTickRef.current = now;
+                const updated = clone(prev);
                 const season = updated.season?.current || 'spring';
                 const weather = updated.weather?.current || 'sunny';
                 const seasonCfg = SEASONS_CFG[season];
@@ -82,16 +93,15 @@ export function GameProvider({ children }) {
                 const growMultiplier = seasonCfg.growMultiplier * weatherCfg.growMultiplier;
 
                 updated.farm.plots.forEach(p => {
-                    if (p.state === 'withered' || !p.crop || !p.plantedAt) return;
+                    if (p.state === 'withered' || !p.crop || !p.plantedAt || p.isReady) return;
                     const cc = config.crops[p.crop];
                     if (!cc) return;
-                    const elapsed = (now - new Date(p.plantedAt)) / 1000;
-                    const effectiveProgress = elapsed * growMultiplier;
-                    p.growProgress = Math.min(100, (effectiveProgress / cc.growTime) * 100);
+                    const progressPerSecond = (100 / cc.growTime) * growMultiplier;
+                    p.growProgress = Math.min(100, (p.growProgress || 0) + progressPerSecond * dt);
                     if (p.growProgress >= 50 && p.state === 'planted') p.state = 'growing';
                     if (p.growProgress >= 100) p.isReady = true;
-                    if (weather === 'rainy' && p.crop && p.state !== 'withered') {
-                        p.waterLevel = Math.min(3, (p.waterLevel || 0) + 0.02);
+                    if (weather === 'rainy') {
+                        p.waterLevel = Math.min(3, (p.waterLevel || 0) + weatherCfg.waterEffect * dt / 15);
                     }
                 });
 
@@ -105,11 +115,12 @@ export function GameProvider({ children }) {
                 const wellLv = updated.buildings.well.level;
                 const regen = config.buildings.well.baseRegen + (wellLv - 1) * config.buildings.well.regenPerLevel;
                 if (updated.resources.energy < config.energy.max) {
-                    updated.resources.energy = Math.min(config.energy.max, updated.resources.energy + regen / 60);
+                    updated.resources.energy = Math.min(config.energy.max, updated.resources.energy + regen * dt / 60);
                 }
                 return updated;
             });
-        }, 1000);
+        };
+        timerRef.current = setInterval(loop, 1000);
         return () => clearInterval(timerRef.current);
     }, [gameData?.level, config]);
 
@@ -119,7 +130,7 @@ export function GameProvider({ children }) {
             setGameData(prev => {
                 if (!prev?.season || !prev?.weather) return prev;
                 const now = new Date();
-                const updated = JSON.parse(JSON.stringify(prev));
+                const updated = clone(prev);
                 const seasonElapsed = (now - new Date(updated.season.startedAt)) / 1000;
                 if (seasonElapsed >= SEASON_DURATION) {
                     const curIdx = SEASON_ORDER.indexOf(updated.season.current);
@@ -141,21 +152,102 @@ export function GameProvider({ children }) {
         return () => clearInterval(weatherTimerRef.current);
     }, [gameData?.season?.current]);
 
+    useEffect(() => {
+        if (!user) return;
+        syncTimerRef.current = setInterval(() => {
+            (async () => {
+                try {
+                    const data = await api.getGameData();
+                    if (data.gameData) {
+                        setGameData(prev => {
+                            if (!prev) return data.gameData;
+                            const remote = clone(data.gameData);
+                            remote.farm.plots.forEach((rp, i) => {
+                                const lp = prev.farm.plots[i];
+                                if (!lp) return;
+                                if (rp.state !== lp.state || rp.crop !== lp.crop) return;
+                                if (rp.isReady && lp.isReady) return;
+                                if (rp.isReady) return;
+                                const progressGap = (rp.growProgress || 0) - (lp.growProgress || 0);
+                                if (Math.abs(progressGap) > 2) {
+                                    rp.growProgress = Math.max(rp.growProgress || 0, lp.growProgress || 0);
+                                } else {
+                                    rp.growProgress = lp.growProgress;
+                                }
+                                rp.waterLevel = Math.max(rp.waterLevel || 0, lp.waterLevel || 0);
+                                rp.lastWatered = lp.lastWatered || rp.lastWatered;
+                                rp.lastWitherCheck = lp.lastWitherCheck || rp.lastWitherCheck;
+                            });
+                            remote.pasture.animals.forEach((ra, i) => {
+                                const la = prev.pasture.animals[i];
+                                if (!la) return;
+                                if (ra.isReady && la.isReady) return;
+                                if (!ra.isReady && la.isReady) ra.isReady = true;
+                            });
+                            if (prev.resources.energy > remote.resources.energy) {
+                                remote.resources.energy = prev.resources.energy;
+                            }
+                            return remote;
+                        });
+                    }
+                    lastTickRef.current = Date.now();
+                } catch (e) { }
+            })();
+        }, FULL_SYNC_INTERVAL);
+        return () => clearInterval(syncTimerRef.current);
+    }, [user]);
+
+    const mergeGameData = useCallback((remoteGD, affected) => {
+        setGameData(prev => {
+            if (!prev) return remoteGD;
+            const remote = clone(remoteGD);
+            if (affected && affected.type === 'plot' && typeof affected.index === 'number') {
+                const idx = affected.index;
+                if (remote.farm.plots[idx]) {
+                    prev.farm.plots[idx] = remote.farm.plots[idx];
+                }
+                prev.resources = remote.resources;
+                prev.level = remote.level;
+                prev.experience = remote.experience;
+                prev.buildings = remote.buildings;
+                prev.stats = remote.stats;
+                prev.lastOnline = remote.lastOnline;
+                const merged = clone(prev);
+                return merged;
+            }
+            return remote;
+        });
+        lastTickRef.current = Date.now();
+    }, []);
+
     const doAction = useCallback(async (actionFn, ...args) => {
         try {
             const data = await actionFn(...args);
-            if (data.gameData) setGameData(data.gameData);
+            if (data.gameData) {
+                setGameData(data.gameData);
+                lastTickRef.current = Date.now();
+            }
             if (data.message) addLog(data.message, data.leveled ? 'success' : 'info');
             if (data.leveled) addLog(`🎉 升级到 Lv.${data.gameData.level}！`, 'success');
             return data;
         } catch (err) { addLog(err.message, 'error'); throw err; }
     }, [addLog]);
 
-    const plant = (slot, crop) => doAction(api.plant, slot, crop);
-    const till = (slot) => doAction(api.till, slot);
-    const water = (slot) => doAction(api.water, slot);
-    const harvest = (slot) => doAction(api.harvest, slot);
-    const clearWithered = (slot) => doAction(api.clearWithered, slot);
+    const doPlotAction = useCallback(async (actionFn, slotIndex, ...rest) => {
+        try {
+            const data = await actionFn(slotIndex, ...rest);
+            if (data.gameData) mergeGameData(data.gameData, { type: 'plot', index: slotIndex });
+            if (data.message) addLog(data.message, data.leveled ? 'success' : 'info');
+            if (data.leveled) addLog(`🎉 升级到 Lv.${data.gameData.level}！`, 'success');
+            return data;
+        } catch (err) { addLog(err.message, 'error'); throw err; }
+    }, [addLog, mergeGameData]);
+
+    const plant = (slot, crop) => doPlotAction(api.plant, slot, crop);
+    const till = (slot) => doPlotAction(api.till, slot);
+    const water = (slot) => doPlotAction(api.water, slot);
+    const harvest = (slot) => doPlotAction(api.harvest, slot);
+    const clearWithered = (slot) => doPlotAction(api.clearWithered, slot);
     const buyAnimal = (slot, type) => doAction(api.buyAnimal, slot, type);
     const collectAnimal = (slot) => doAction(api.collectAnimal, slot);
     const upgrade = (type) => doAction(api.upgrade, type);

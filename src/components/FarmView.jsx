@@ -1,19 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
-import { animateGoldGain, animateStaggerIn, animatePulse } from '../utils/animations';
+import { animateGoldGain, animateStaggerIn } from '../utils/animations';
 
 const SEASONS_MAP = {
-    spring: { name: '春天', icon: '🌸', color: '#f9a8d4' },
-    summer: { name: '夏天', icon: '☀️', color: '#fbbf24' },
-    autumn: { name: '秋天', icon: '🍂', color: '#f97316' },
-    winter: { name: '冬天', icon: '❄️', color: '#93c5fd' }
+    spring: { name: '春天', icon: '🌸', color: '#f9a8d4', growMul: 1.0 },
+    summer: { name: '夏天', icon: '☀️', color: '#fbbf24', growMul: 1.3 },
+    autumn: { name: '秋天', icon: '🍂', color: '#f97316', growMul: 0.8 },
+    winter: { name: '冬天', icon: '❄️', color: '#93c5fd', growMul: 0.5 }
 };
 
 const WEATHERS_MAP = {
-    sunny: { name: '晴天', icon: '☀️', desc: '生长加速', color: '#fbbf24' },
-    rainy: { name: '雨天', icon: '🌧️', desc: '自动浇水', color: '#60a5fa' },
-    drought: { name: '干旱', icon: '🏜️', desc: '枯萎风险高', color: '#f87171' },
-    coldwave: { name: '寒潮', icon: '🥶', desc: '生长缓慢', color: '#a78bfa' }
+    sunny: { name: '晴天', icon: '☀️', desc: '生长加速', color: '#fbbf24', growMul: 1.2 },
+    rainy: { name: '雨天', icon: '🌧️', desc: '自动浇水', color: '#60a5fa', growMul: 0.8 },
+    drought: { name: '干旱', icon: '🏜️', desc: '枯萎风险高', color: '#f87171', growMul: 0.6 },
+    coldwave: { name: '寒潮', icon: '🥶', desc: '生长缓慢', color: '#a78bfa', growMul: 0.3 }
 };
 
 const PLOT_STATE_DISPLAY = {
@@ -27,9 +27,17 @@ const PLOT_STATE_DISPLAY = {
 export default function FarmView() {
     const { gameData, config, plant, till, water, harvest, clearWithered } = useGame();
     const [selectedCrop, setSelectedCrop] = useState(null);
+    const [, setTick] = useState(0);
     const containerRef = useRef(null);
 
-    useEffect(() => { if (containerRef.current) animateStaggerIn('.plot-card', containerRef.current); }, [gameData?.farm?.plots?.length]);
+    useEffect(() => {
+        if (containerRef.current) animateStaggerIn('.plot-card', containerRef.current);
+    }, [gameData?.farm?.plots?.length]);
+
+    useEffect(() => {
+        const id = setInterval(() => setTick(t => t + 1), 1000);
+        return () => clearInterval(id);
+    }, []);
 
     if (!gameData || !config) return null;
 
@@ -38,13 +46,15 @@ export default function FarmView() {
     const seasonCfg = SEASONS_MAP[season];
     const weatherCfg = WEATHERS_MAP[weather];
 
-    const seasonElapsed = gameData.season?.startedAt ? (Date.now() - new Date(gameData.season.startedAt).getTime()) / 1000 : 0;
+    const now = Date.now();
+
+    const seasonElapsed = gameData.season?.startedAt ? (now - new Date(gameData.season.startedAt).getTime()) / 1000 : 0;
     const seasonTotal = 120;
     const seasonRemain = Math.max(0, seasonTotal - seasonElapsed);
     const seasonRemainMin = Math.floor(seasonRemain / 60);
     const seasonRemainSec = Math.floor(seasonRemain % 60);
 
-    const weatherElapsed = gameData.weather?.changedAt ? (Date.now() - new Date(gameData.weather.changedAt).getTime()) / 1000 : 0;
+    const weatherElapsed = gameData.weather?.changedAt ? (now - new Date(gameData.weather.changedAt).getTime()) / 1000 : 0;
     const weatherTotal = 30;
     const weatherRemain = Math.max(0, weatherTotal - weatherElapsed);
     const weatherRemainSec = Math.floor(weatherRemain);
@@ -52,21 +62,23 @@ export default function FarmView() {
     const getEffectiveGrowTime = (cropKey) => {
         const cc = config.crops[cropKey];
         if (!cc) return 0;
-        const sCfg = SEASONS_MAP[season] ? { growMultiplier: season === 'spring' ? 1.0 : season === 'summer' ? 1.3 : season === 'autumn' ? 0.8 : 0.5 } : { growMultiplier: 1.0 };
-        const wCfg = { sunny: 1.2, rainy: 0.8, drought: 0.6, coldwave: 0.3 }[weather] || 1.0;
-        return Math.ceil(cc.growTime / (sCfg.growMultiplier * wCfg));
+        const sMul = SEASONS_MAP[season]?.growMul || 1;
+        const wMul = WEATHERS_MAP[weather]?.growMul || 1;
+        return Math.ceil(cc.growTime / (sMul * wMul));
     };
 
     const getTimeLeft = (plot) => {
         if (!plot.crop || !plot.plantedAt || plot.state === 'withered') return '';
         if (plot.isReady) return '已成熟';
         const cc = config.crops[plot.crop];
-        const sMul = season === 'spring' ? 1.0 : season === 'summer' ? 1.3 : season === 'autumn' ? 0.8 : 0.5;
-        const wMul = { sunny: 1.2, rainy: 0.8, drought: 0.6, coldwave: 0.3 }[weather] || 1.0;
+        if (!cc) return '';
+        const sMul = SEASONS_MAP[season]?.growMul || 1;
+        const wMul = WEATHERS_MAP[weather]?.growMul || 1;
         const growMultiplier = sMul * wMul;
-        const elapsed = (Date.now() - new Date(plot.plantedAt).getTime()) / 1000;
-        const effectiveProgress = elapsed * growMultiplier;
-        const left = Math.max(0, cc.growTime - effectiveProgress);
+        const progress = plot.growProgress || 0;
+        const remainingProgress = 100 - progress;
+        const progressPerSecond = (100 / cc.growTime) * growMultiplier;
+        const left = remainingProgress / progressPerSecond;
         if (left <= 0) return '已成熟';
         const m = Math.floor(left / 60), s = Math.floor(left % 60);
         return `${m}:${s.toString().padStart(2, '0')}`;
@@ -89,8 +101,12 @@ export default function FarmView() {
             return;
         }
         if (plot.isReady && plot.crop) {
-            await harvest(idx);
-            if (containerRef.current) animateGoldGain(containerRef.current, `+${config.crops[plot.crop]?.sellPrice || 0} 💰`);
+            try {
+                await harvest(idx);
+                if (containerRef.current) animateGoldGain(containerRef.current, `+${config.crops[plot.crop]?.sellPrice || 0} 💰`);
+            } catch (e) {
+                setTimeout(() => setTick(t => t + 1), 200);
+            }
             return;
         }
         if (plot.state === 'empty') {
@@ -105,7 +121,11 @@ export default function FarmView() {
 
     const handleWater = async (e, idx) => {
         e.stopPropagation();
-        await water(idx);
+        try {
+            await water(idx);
+        } catch (e) {
+            setTimeout(() => setTick(t => t + 1), 200);
+        }
     };
 
     const renderWaterDots = (waterLevel) => {
